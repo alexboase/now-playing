@@ -1,0 +1,21 @@
+html,body{
+  margin:0;
+}
+body {
+  background-color: #222;
+  color: #ddd;
+  font-family: 'Prompt', sans-serif;
+}
+.track-meta{
+  padding: 0 20px;
+}
+.track-meta h1 ,
+.track-meta h2 ,
+.track-meta h3 {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space:nowrap;
+}
+.album-art{
+  width:100%;
+}
