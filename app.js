@@ -17,3 +17,19 @@ function getParameterByName(name, url) {
     if (!results[2]) return '';
     return decodeURIComponent(results[2].replace(/\+/g, " "));
 }
+var conf = {
+  url: "/notifications",
+  debug: true
+}
+
+function init() {
+    var source = new EventSource(conf.url)
+
+    if (conf.debug) console.log("Binding event source");
+
+    source.addEventListener('trackchange', function(e) {
+        console.log("e", e);
+    }, false);
+}
+
+init();
