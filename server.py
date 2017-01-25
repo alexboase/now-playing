@@ -16,6 +16,8 @@ from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
 from os import curdir, sep
 import urllib2
 import Queue
+from pprint import pprint
+import coloredlogs
 
 SERVICE_NAME = "org.bluez"
 AGENT_IFACE = SERVICE_NAME + '.Agent1'
@@ -25,6 +27,7 @@ PLAYER_IFACE = SERVICE_NAME + '.MediaPlayer1'
 TRANSPORT_IFACE = SERVICE_NAME + '.MediaTransport1'
 
 #LOG_LEVEL = logging.INFO
+coloredlogs.install(level='DEBUG')
 LOG_LEVEL = logging.DEBUG
 LOG_FILE = "/dev/stdout"
 LOG_FORMAT = "%(asctime)s %(levelname)s %(message)s"
@@ -46,7 +49,7 @@ def findAdapter():
         return dbus.Interface(obj, ADAPTER_IFACE)
     raise Exception("Bluetooth adapter not found")
 
-TRACK_QUEUE = Queue()
+TRACK_QUEUE = Queue.Queue()
 
 class BluePlayer(dbus.service.Object):
     AGENT_PATH = "/blueplayer/agent"
@@ -146,24 +149,27 @@ class BluePlayer(dbus.service.Object):
 
     def playerHandler(self, interface, changed, invalidated, path):
         """Handle relevant property change signals"""
-        logging.debug("Event [{}] changed [{}] on path [{}]".format(interface, changed, path))
+        #logging.debug("Event [{}] changed [{}] on path [{}]".format(interface, changed, path))
         iface = interface[interface.rfind(".") + 1:]
 
         if iface == "MediaPlayer1":
             if "Track" in changed:
                 logging.debug("Track has changed to [{}]".format(changed["Track"]))
                 self.track = changed["Track"]
+                self.updateTrackInfo()
             if "Status" in changed:
                 logging.debug("Status has changed to [{}]".format(changed["Status"]))
                 self.status = (changed["Status"])
 
-        self.updateTrackInfo()
 
     def updateTrackInfo(self):
         """Display the current track"""
+        print self.status
+        #pprint(vars(self))
+        if self.track is None:
+            return
         logging.debug("Updating track for connected: [{}]; state: [{}]; status: [{}]; discoverable [{}]".format(self.connected, self.state, self.status, self.discoverable))
-        print self.track
-        print "{} - {} - {}".format(self.track["Title"], self.track["Artist"], self.track["Album"])
+        logging.info("Playing: {} - {} - {}".format(self.track["Title"], self.track["Artist"], self.track["Album"]))
         TRACK_QUEUE.put(self.track)
 
     def getStatus(self):
@@ -210,18 +216,20 @@ dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
 
 time.sleep(2)
 
+def notificationStream():
+    #while True:
+    track = TRACK_QUEUE.get()
+    yield "event: trackchange\ndata: {}\n\n ".format(track['Album'])
+
+
 class BTWebServer(BaseHTTPRequestHandler):
     def do_GET(self):
 
         path, _, params = self.path.partition('?')
 
-        print path
-        print params
-
         if path=="/":
             path="/index.html"
         elif path == '/cors':
-            print "cors request"
             f = urllib2.urlopen(params)
             self.send_response(200)
             self.send_header('Content-type', 'application/json')
@@ -230,8 +238,13 @@ class BTWebServer(BaseHTTPRequestHandler):
             f.close()
             return
         elif path == '/notifications':
-            print 'waiting for notifications'
-
+            logging.info('/notifications')
+            self.send_response(200)
+            self.send_header('Content-type', 'text/event-stream')
+            self.end_headers()
+            stream = notificationStream()
+            while True:
+                self.wfile.write(stream.next())
 
         try:
             #Check the file extension required and
@@ -267,10 +280,14 @@ class BTWebServer(BaseHTTPRequestHandler):
         except IOError:
             self.send_error(404,'File Not Found: %s' % path)
 
+    def log_message(self,format, *args):
+        """Silence the web server log"""
+        return
+
 def webserver():
     PORT = 8080
     server = HTTPServer(('', PORT), BTWebServer)
-    print 'started web server'
+    logging.info("Starting Web Server on :{}".format(PORT))
     server.serve_forever()
 
 
@@ -287,3 +304,6 @@ except KeyboardInterrupt as ex:
     logging.info("BluePlayer canceled by user")
 except Exception as ex:
     logging.error("How embarrassing. The following error occurred {}".format(ex))
+finally:
+    logging.info("cleaning up")
+    wt.join()
